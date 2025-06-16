@@ -1,1 +1,160 @@
+In the previous video I said that you may forget to explicitly call SetUp or TearDown if you subclass your test fixture. That's not a good way to express myself, so let me clear things up.
 
+What I should have said is that if you subclass your test fixture and override SetUp() and TearDown(), you may forget to call the parent's SetUp() or TearDown(). You don't always have to. I modified the example in the course with a child class to explain this. Here it is:
+
+#include <iostream>
+#include <gtest/gtest.h>
+#include <stdexcept>
+#include "LibraryCode.hpp"
+ 
+ 
+TEST(AccountTest, TestEmptyAccount)
+{
+  Account account;
+ 
+  double balance = account.getBalance();
+ 
+  ASSERT_EQ(0, balance);
+}
+ 
+class AccountTestFixture: public testing::Test
+{
+  public:
+   AccountTestFixture();
+   virtual ~AccountTestFixture();
+   void SetUp() override;
+   void TearDown() override;
+   static void SetUpTestCase();
+   static void TearDownTestCase();
+  protected:
+   int *ptr;
+   Account account;
+};
+ 
+AccountTestFixture::AccountTestFixture()
+{
+  std::cout << "Constructor called\n";
+}
+ 
+AccountTestFixture::~AccountTestFixture()
+{
+  std::cout << "Destructor called\n";
+}
+ 
+void AccountTestFixture::SetUpTestCase()
+{
+  std::cout << "SetUpTestCase called\n";
+}
+ 
+void AccountTestFixture::TearDownTestCase()
+{
+  std::cout << "TearDownTestCase called\n";
+}
+ 
+void AccountTestFixture::SetUp()
+{
+    std::cout << "SetUp called\n";
+    account.deposit(10.5);
+    ptr = new int;
+    *ptr = 5;
+}
+ 
+void AccountTestFixture::TearDown()
+{
+    std::cout << "TearDown called\n";
+    delete ptr;
+}
+ 
+/////////////////////////////
+ 
+class AccountTestFixtureChild: public AccountTestFixture
+{
+public:
+  AccountTestFixtureChild();
+  ~AccountTestFixtureChild();
+  void SetUp() ;
+  void TearDown();
+  static void SetUpTestCase();
+  static void TearDownTestCase();
+};
+ 
+ 
+AccountTestFixtureChild::AccountTestFixtureChild()
+{
+  std::cout << "Constructor called (child)\n";
+}
+ 
+AccountTestFixtureChild::~AccountTestFixtureChild()
+{
+  std::cout << "Destructor called (child)\n";
+}
+ 
+void AccountTestFixtureChild::SetUpTestCase()
+{
+  std::cout << "SetUpTestCase called (child)\n";
+}
+ 
+void AccountTestFixtureChild::TearDownTestCase()
+{
+  std::cout << "TearDownTestCase called (child)\n";
+}
+ 
+void AccountTestFixtureChild::SetUp()
+{
+  //forgot to call AccountTestFixture::SetUp() -> crash
+    std::cout << "SetUp called (child)\n";
+    std::cout << "Ptr = " << (*ptr) << '\n';
+    account.deposit(10.5);
+}
+ 
+void AccountTestFixtureChild::TearDown()
+{
+  //forgot to call AccountTestFixture::TearDown() -> memory leak
+    std::cout << "TearDown called (child)\n";
+}
+TEST_F(AccountTestFixtureChild, TestDeposit)
+{ 
+  std::cout << "Test body\n";
+  ASSERT_EQ(10.5, account.getBalance());
+}
+ 
+ 
+TEST_F(AccountTestFixtureChild,  TestWithdrawOK)
+{
+  account.withdraw(3);
+ 
+  ASSERT_EQ(7.5, account.getBalance());
+}
+ 
+ 
+TEST_F(AccountTestFixtureChild,  TestWithdrawInsufficientFunds)
+{
+  ASSERT_THROW(account.withdraw(300), std::runtime_error);
+}
+ 
+ 
+TEST_F(AccountTestFixtureChild,  TestTransferOK)
+{
+  Account to;
+ 
+  account.transfer(to, 2);
+  
+  ASSERT_EQ(8.5, account.getBalance());
+  ASSERT_EQ(2, to.getBalance());
+}
+ 
+ 
+TEST_F(AccountTestFixtureChild,  TestTransferInsufficientFunds)
+{
+  Account to;
+ 
+  ASSERT_THROW(account.transfer(to, 200), std::runtime_error);
+}
+ 
+int main(int argc, char **argv)
+{
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
+ 
+In this example, I added a pointer which we allocate in SetUp and deallocate in TearDown. The child's SetUp does not call the parent's SetUp but tries to print the content of the pointer and it crashes. If you forget to call the parent's TearDown, there is no crash, but a memory leak since you are never calling delete ptr .
